@@ -6,6 +6,9 @@ Ext.define('CustomApp', {
 	},
 
 	_loadData : function() {
+		var projects = Ext.create('Ext.util.HashMap');
+		projects.add(,
+
 		var today = Rally.util.DateTime.toIsoString(new Date());
 
 		var releaseDateFilter = Ext.create('Rally.data.wsapi.Filter', {
@@ -37,11 +40,19 @@ Ext.define('CustomApp', {
 					listeners : {
 						load : function(myStore, myData, mySuccess) {
 
+							var releases = Ext.create('Ext.util.HashMap');
+							Ext.Array.each(myStore.getRecords(), function(release) {
+								releases.add(release.get('_ref'), [release.get('ReleaseStartDate'), release.get('ReleaseDate')]);
+							}
+							);
+
+							console.log(releases);
 							var releaseFilter = Ext.create(
 									'Rally.data.wsapi.Filter', {
 										property : 'Release',
 										value : "/release/11242254996"
 									});
+
 
 							console.log("Loaded release data: " + myStore.data.length);
 							var myStore2 = Ext.create('Rally.data.wsapi.Store', {
@@ -52,12 +63,41 @@ Ext.define('CustomApp', {
 									project : '/project/11089755042',
 									projectScopeDown : true
 								},
-								filters : releaseFilter,
+//								filters : releaseFilter,
 								autoLoad : true,
 								listeners : {
 									load : function(myStore, myData, mySuccess) {
 										console.log("Loaded feature data: " + myStore.data.length);
 
+										Ext.Array.each(myStore.getRecords(), function(feature){
+											var featureRelease = feature.get('Release');
+											if (featureRelease != null) {
+												var featureReleaseRef = featureRelease._ref;
+												if (! releases.get(featureReleaseRef)) {
+													myStore.remove(feature);
+												}
+											}
+											else {
+												myStore.remove(feature);
+											}
+										}
+										);
+
+										Ext.Array.each(myStore.getRecords(), function(feature){
+											var featureRelease = feature.get('Release');
+											if (featureRelease != null) {
+												var featureReleaseRef = featureRelease._ref;
+												if (! releases.get(featureReleaseRef)) {
+													myStore.remove(feature);
+												}
+											}
+											else {
+												myStore.remove(feature);
+											}
+										}
+										);
+										console.log(myStore.data.length);
+										
 										this._loadGrid(myStore);
 									},
 									scope : this
@@ -82,7 +122,7 @@ Ext.define('CustomApp', {
 			columnCfgs : [ 'FormattedID', 'Name', 'ReleaseDate',
 					'ReleaseStartDate' ]
 		});
-		// console.log("newStore: " + newStore.data.length);
+		console.log("myStore: " + myStore.data.length);
 		console.log(myStore);
 		this.add(myGrid);
 	}
