@@ -6,6 +6,14 @@ Ext.define('CustomApp', {
 	},
 
 	_loadData : function() {
+
+		// Relevant programs
+		
+		var programs = ['CGCS', 'VxWorks ST', 'IOT', 'Networking',
+	                    'OVP', 'Linux', 'VxWorks 653 3.0', 'VxWorks 7', 'Tools'];
+
+		// All relevant programs and their programs
+		
 		var projects = Ext.create('Ext.util.HashMap');
 		projects.add('13538110755', 'CGCS');
 		projects.add('15267702952', 'VxWorks ST');
@@ -27,9 +35,9 @@ Ext.define('CustomApp', {
 		projects.add('15106843053', 'Tools');
 		projects.add('12168776634', 'Tools');
 
-		var programs = ['CGCS', 'VxWorks ST', 'IOT', 'Networking',
-		                    'OVP', 'Linux', 'VxWorks 653 3.0', 'VxWorks 7', 'Tools'];
-
+		// Prepare a filter to get all releases happening now
+		// ReleaseStartDate <= today && ReleaseDate > today
+		
 		var today = Rally.util.DateTime.toIsoString(new Date());
 
 		var releaseDateFilter = Ext.create('Rally.data.wsapi.Filter', {
@@ -55,31 +63,38 @@ Ext.define('CustomApp', {
 						project : '/project/11089755042',
 						projectScopeDown : true
 					},
-					// Get all features
+
+					// Release must be happening now
+					
 					filters : releaseDatesFilter,
 					autoLoad : true,
 					listeners : {
 						load : function(myStore, myData, mySuccess) {
 
+							console.log("Loaded release data: " + myStore.data.length);
+
+							// Create hash of relevant releases to filter features
+							// Key will be the release ref ID, which the filter will have
+							
 							var releases = Ext.create('Ext.util.HashMap');
 							Ext.Array.each(myStore.getRecords(), function(release) {
-								releases.add(release.get('_ref'), [release.get('ReleaseStartDate'), release.get('ReleaseDate')]);
-							}
+									releases.add(release.get('_ref'), [release.get('ReleaseStartDate'), release.get('ReleaseDate')]);
+								}
 							);
 
-							console.log(releases);
-							var releaseFilter = Ext.create(
-									'Rally.data.wsapi.Filter', {
-										property : 'Release',
-										value : "/release/11242254996"
-									});
-
-
-							console.log("Loaded release data: " + myStore.data.length);
-							var myStore2 = Ext.create('Rally.data.wsapi.Store', {
+							// Get features
+							// Rally filters cannot be too complex, so we must parse data after it has been received
+							
+							Ext.create('Rally.data.wsapi.Store', {
 								model : 'PortfolioItem/Feature',
 								fetch : [ 'FormattedID', 'Name', 'Release', 'Project', 'State', 'c_PATracking', 'UserStories' ],
+
+								// Get all features
+								
 								limit : Infinity,
+
+								// Limit to Product Lines project and its children
+
 								context : {
 									project : '/project/11089755042',
 									projectScopeDown : true
@@ -90,29 +105,43 @@ Ext.define('CustomApp', {
 									load : function(myStore, myData, mySuccess) {
 										console.log("Loaded feature data: " + myStore.data.length);
 
+										// Prepare hashes to store totals of feature data
+										
 										var total = Ext.create('Ext.util.HashMap');
 										var reviewed = Ext.create('Ext.util.HashMap');
 										var validated = Ext.create('Ext.util.HashMap');
 										var hld = Ext.create('Ext.util.HashMap');
 										var hldgreenlit = Ext.create('Ext.util.HashMap');
 										
+										// Get data from each feature
+										
 										Ext.Array.each(myStore.getRecords(), function(feature){
 											var featureRelease = feature.get('Release');
+
+											// Feature must have a Release to matter
+											
 											if (featureRelease != null) {
 												var featureReleaseRef = featureRelease._ref;
-												if (! releases.get(featureReleaseRef)) {
-													myStore.remove(feature);
-												}
-												else {
+												
+												// Feature's release must be happening now
+												
+												if (releases.get(featureReleaseRef)) {
 													var featureProject = feature.get('Project');
 													var featureProjectRef = featureProject._ref;
 													var featureProjectRefID = featureProjectRef.split("/").pop(); 
-													if (! projects.get(featureProjectRefID)) {
-														myStore.remove(feature);
-													}
-													else {
+
+													// Project must be relevant - see "projects" hash
+													
+													if (projects.get(featureProjectRefID)) {
 														var program = projects.get(featureProjectRefID);
-														console.log(program);
+
+														// In Ext hashes, an element must first be added
+														// On later passes, it can be incremented by
+														// getting the original value, adding 1, and
+														// replacing the original value in the hash
+														
+														// Increment number of features for program
+
 														if (! total.get(program)) {
 															total.add(program, 1);
 														}
@@ -121,9 +150,13 @@ Ext.define('CustomApp', {
 															totalTmp++;
 															total.replace(program, totalTmp);
 														}
-														console.log(total.get(program));
+
+														// Check tracking status
+														
 														var featureTracking = feature.get('c_PATracking');
-														// console.log(featureTracking);
+
+														// Increment number of reviewed features for program
+														
 														if (featureTracking == "Review") {
 															if (! reviewed.get(program)) {
 																reviewed.add(program, 1);
@@ -134,11 +167,15 @@ Ext.define('CustomApp', {
 																reviewed.replace(program, reviewedTmp);
 															}
 														}
-														console.log(reviewed.get(program));
+
+														// Check feature state
+														
 														var featureState = feature.get('State');
+
+														// Increment number of reviewed features for program
+														
 														if (featureState != null) {
 															featureStateName = featureState._refObjectName;
-															// console.log(featureStateName);
 															if (featureStateName == "Done") {
 																if (! validated.get(program)) {
 																	validated.add(program, 1);
@@ -149,10 +186,8 @@ Ext.define('CustomApp', {
 																	validated.replace(program, validatedTmp);
 																}
 															}
-															console.log(validated.get(program));
 														}
 														
-														// GET USER STORIES - CHECK FOR HLD TAG, ETC.
 													}
 												}
 											}
@@ -162,6 +197,8 @@ Ext.define('CustomApp', {
 										}
 										);
 
+										// Create and populate a data store of the feature data
+										
 										Ext.define('featureData', {
 										    extend: 'Ext.data.Model',
 										    fields: [
@@ -174,6 +211,7 @@ Ext.define('CustomApp', {
 										var featureStore = Ext.create('Ext.data.Store', {
 											model: featureData
 										});
+
 										for (i = 0; i < programs.length; i++) {
 											var programTmp = programs[i];
 											var totalTmp = 0;
