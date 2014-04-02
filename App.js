@@ -140,7 +140,7 @@ Ext.define('CustomApp', {
 
     	Ext.create('Rally.data.wsapi.Store', {
     		model : 'PortfolioItem/Feature',
-    		fetch : [ 'FormattedID', 'Name', 'Release', 'Project', 'State', 'c_PATracking', 'UserStories' ],
+    		fetch : [ 'FormattedID', 'ObjectID', 'Name', 'Release', 'Project', 'State', 'c_PATracking', 'UserStories' ],
 
     		// Limit to Product Lines project and its children
 
@@ -164,9 +164,12 @@ Ext.define('CustomApp', {
 					var total = Ext.create('Ext.util.HashMap');
 					var reviewed = Ext.create('Ext.util.HashMap');
 					var validated = Ext.create('Ext.util.HashMap');
-					var features = [];
+					var features = Ext.create('Ext.util.HashMap');
 					
     				Ext.Array.each(myStore.getRecords(), function(feature) {
+    					var featureID = feature.get('ObjectID');
+    					var featureFID = feature.get('FormattedID');
+    					var featureName = feature.get('Name');
     					var featureRelease = feature.get('Release');
 
 						// Feature must have a Release to matter
@@ -185,7 +188,7 @@ Ext.define('CustomApp', {
 								
 								if (projectNames.get(featureProjectRefID) && projectPrograms.get(featureProjectRefID)) {
 									
-									features.push(featureProjectRefID);
+									features.add(featureID, featureFID + ": " + featureName);
 									
 									// Increment number of features for project
 
@@ -217,7 +220,7 @@ Ext.define('CustomApp', {
     						} // end if (releases.get(featureReleaseRef)) 
     					} // end if (featureRelease != null)
     				}, this); // end Ext.Array.each(myStore.getRecords(), function(feature)
-    				this._loadUserStories(releases, projectNames, projectPrograms, programs, features, total, reviewed, validated);
+    				this._loadUserStories(projectNames, projectPrograms, programs, features, total, reviewed, validated);
     			} // end load
     		} // end listeners
     	}); // end Ext.create('Rally.data.wsapi.Store'
@@ -225,7 +228,7 @@ Ext.define('CustomApp', {
     				
 	// Create and populate a data store of the feature data
 	
-    _loadUserStories : function(releases, projectNames, projectPrograms, programs, features, total, reviewed, validated) {
+    _loadUserStories : function(projectNames, projectPrograms, programs, features, total, reviewed, validated) {
 
     	// Get HLD user stories
 
@@ -237,7 +240,7 @@ Ext.define('CustomApp', {
 
 		Ext.create('Rally.data.wsapi.Store', {
     		model : 'UserStory',
-    		fetch : [ 'FormattedID', 'ScheduleState', 'c_PAHLD', 'Project', 'PortfolioItem' ],    		
+    		fetch : [ 'FormattedID', 'ScheduleState', 'Project', 'PortfolioItem' ],    		
      		
     		// Limit to Product Lines project and its children
 
@@ -259,36 +262,52 @@ Ext.define('CustomApp', {
 					var hldgreenlit = Ext.create('Ext.util.HashMap');
 					
     				Ext.Array.each(myStore.getRecords(), function(userStory) {
-    					var feature = userStory.get('PortfolioItem');
     					var fID = userStory.get('FormattedID');
-    					console.log(fID);
-    					console.log(feature);
+
+						// Ignore any user story not attached to a feature
 
     					var feature = userStory.get('PortfolioItem');
-						var featureRef = USProject._ref;
-						var featureRefID = USProjectRef.split("/").pop();
-						if (features.get(featureRefID)) {
-							var USProject = userStory.get('Project');
-							var USProjectRef = USProject._ref;
-							var USProjectRefID = USProjectRef.split("/").pop();
+    					if (feature !== null) {
+    						var featureRef = feature._ref;
+    						var featureRefID = featureRef.split("/").pop();
 
-							if (projectNames.get(USProjectRefID) && projectPrograms.get(USProjectRefID)) {
-								this._addToHash(hld, USProjectRefID, 1);
-								var USState = userStory.get('ScheduleState');
-								
-								if (USState == "") {
-									this._addToHash(hldgreenlit, USProjectRefID, 1);									
-								}
-							}
-						}
+    						// User story's feature must be one that is being counted
+
+    						if (features.get(featureRefID)) {
+    							var featureID = features.get(featureRefID);
+		    					console.log(featureID + " - HLD " + fID);
+    							
+    							var USProject = userStory.get('Project');
+    							var USProjectRef = USProject._ref;
+    							var USProjectRefID = USProjectRef.split("/").pop();
+
+        						// User story's project must be one that is being counted
+
+    							if (projectNames.get(USProjectRefID) && projectPrograms.get(USProjectRefID)) {
+            						
+    								// Increment project's HLD count
+
+    								this._addToHash(hld, USProjectRefID, 1);
+
+            						// Increment project's HLD Greenlit count if HLD has been accepted
+            						
+    								var USState = userStory.get('ScheduleState');
+    		    					console.log(featureID + " - HLD " + fID + ": " + projectNames.get(USProjectRefID) + " - " + USState);
+    								
+    								if (USState == "Accepted") {
+    									this._addToHash(hldgreenlit, USProjectRefID, 1);									
+    								}
+    							} //end if (projectNames.get(USProjectRefID) && projectPrograms.get(USProjectRefID))
+    						} // end if (features.get(featureRefID))
+    					} // end if (feature !== null)
     				}, this); // end Ext.Array.each(myStore.getRecords(), function(userStory)
-    				this._compileData(projectNames, projectPrograms, total, reviewed, validated, hld, hldgreenlit);
+    				this._compileData(projectNames, projectPrograms, programs, total, reviewed, validated, hld, hldgreenlit);
     			} // end load
     		} // end listeners
     	}); // end Ext.create('Rally.data.wsapi.Store'
     }, // end _loaduserStories
 
-    _compileData : function(projectNames, projectPrograms, total, reviewed, validated, hld, hldgreenlit) {
+    _compileData : function(projectNames, projectPrograms, programs, total, reviewed, validated, hld, hldgreenlit) {
 
     	// Compile all the data collected from Features and User Stories
 
@@ -298,8 +317,8 @@ Ext.define('CustomApp', {
     	        {name: 'item', type: 'string'},
     	        {name: 'total', type: 'int'},
     	        {name: 'reviewed', type: 'int'},
-    	        {name: 'validated', type: 'int'}
-    	        {name: 'hld', type: 'int'}
+    	        {name: 'validated', type: 'int'},
+    	        {name: 'hld', type: 'int'},
     	        {name: 'hldgreenlit', type: 'int'}
     	    ]
     	});
@@ -313,6 +332,8 @@ Ext.define('CustomApp', {
     	var programTotal = Ext.create('Ext.util.HashMap');
     	var programReviewed = Ext.create('Ext.util.HashMap');
     	var programValidated = Ext.create('Ext.util.HashMap');
+    	var programHLD = Ext.create('Ext.util.HashMap');
+    	var programHLDGreenlit = Ext.create('Ext.util.HashMap');
 
     	// Cycle through the projects, creating an entry for each and adding
     	// its total to the program total
@@ -328,6 +349,8 @@ Ext.define('CustomApp', {
     		var totalTmp = 0;
     		var reviewedTmp = 0;
     		var validatedTmp = 0;
+    		var hldTmp = 0;
+    		var hldgreenlitTmp = 0;
 
     		// Get the stats total for the project and add it to the program total
     		
@@ -343,11 +366,19 @@ Ext.define('CustomApp', {
     			validatedTmp = validated.get(projectID);
     			this._addToHash(programValidated, projectProgram, validatedTmp);
     		}
+    		if (hld.get(projectID)) {
+    			hldTmp = hld.get(projectID);
+    			this._addToHash(programHLD, projectProgram, hldTmp);
+    		}
+    		if (hldgreenlit.get(projectID)) {
+    			hldgreenlitTmp = hldgreenlit.get(projectID);
+    			this._addToHash(programHLDGreenlit, projectProgram, hldgreenlitTmp);
+    		}
     		
     		// Make an entry in the data store
 
-    		console.log("project: " + name + ", total: " + totalTmp + ", reviewed: " + reviewedTmp + ", validated: " + validatedTmp);
-    		featureStore.add({item: name, total: totalTmp, reviewed: reviewedTmp, validated: validatedTmp});
+    		console.log("project: " + name + ", total: " + totalTmp + ", reviewed: " + reviewedTmp + ", validated: " + validatedTmp + ", hld: " + hldTmp + ", hldgreenlit: " + hldgreenlitTmp);
+    		featureStore.add({item: name, total: totalTmp, reviewed: reviewedTmp, validated: validatedTmp, hld: hldTmp, hldgreenlit: hldgreenlitTmp});
     	}, this);
 
     	// Compile data for the programs
@@ -357,6 +388,9 @@ Ext.define('CustomApp', {
     		var totalTmp = 0;
     		var reviewedTmp = 0;
     		var validatedTmp = 0;
+    		var hldTmp = 0;
+    		var hldgreenlitTmp = 0;
+
     		if (programTotal.get(programTmp)) {
     			totalTmp = programTotal.get(programTmp);
     		}
@@ -366,13 +400,20 @@ Ext.define('CustomApp', {
     		if (programValidated.get(programTmp)) {
     			validatedTmp = programValidated.get(programTmp);
     		}
+    		if (programHLD.get(programTmp)) {
+    			hldTmp = programHLD.get(programTmp);
+    		}
+    		if (programHLDGreenlit.get(programTmp)) {
+    			hldgreenlitTmp = programHLDGreenlit.get(programTmp);
+    		}
     		
     		// Make an entry in the data store
 
-    		featureStore.add({item: programTmp, total: totalTmp, reviewed: reviewedTmp, validated: validatedTmp});
+    		console.log("project: " + programTmp + ", total: " + totalTmp + ", reviewed: " + reviewedTmp + ", validated: " + validatedTmp + ", hld: " + hldTmp + ", hldgreenlit: " + hldgreenlitTmp);
+    		featureStore.add({item: programTmp, total: totalTmp, reviewed: reviewedTmp, validated: validatedTmp, hld: hldTmp, hldgreenlit: hldgreenlitTmp});
     	}
 
-    	console.log(featureStore);
+//    	console.log(featureStore);
     	
     	this._loadGrid(featureStore);
 				
@@ -387,13 +428,15 @@ Ext.define('CustomApp', {
 		    store: myStore,
 		    columns: [
 		        { text: 'Program',  dataIndex: 'item', width: 300 },
-		        { text: 'Current Features', dataIndex: 'total'},
+		        { text: 'Current Features', dataIndex: 'total' },
 		        { text: 'Reviewed Features', dataIndex: 'reviewed' },
-		        { text: 'Validated Features', dataIndex: 'validated' }
+		        { text: 'Validated Features', dataIndex: 'validated' },
+		        { text: 'HLDs', dataIndex: 'hld' },
+		        { text: 'HLDs Greenlit', dataIndex: 'hldgreenlit' }
 		    ]
 		});
 		myGrid.store.sort([{property: 'item',  direction: 'ASC'}]);
-		console.log(myStore);
+//		console.log(myStore);
 		this.add(myGrid);
 	}
 }); // end Ext.define('CustomApp'
